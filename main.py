@@ -21,6 +21,7 @@ app.add_middleware(
 class DownloadRequest(BaseModel):
     url: str
     type: str   # "video" or "audio"
+    use_cookies: bool = False  # optional flag for login-required videos
 
 
 @app.post("/download")
@@ -41,10 +42,19 @@ async def download_media(data: DownloadRequest):
     else:
         raise HTTPException(status_code=400, detail="type must be 'audio' or 'video'")
 
+    # yt-dlp options
     ydl_opts = {
         "format": format_choice,
         "outtmpl": output_template,
     }
+
+    # Add cookies if requested
+    if data.use_cookies:
+        # Requires you to have cookies.txt in project root (export from browser)
+        cookies_file = "cookies.txt"
+        if not os.path.exists(cookies_file):
+            raise HTTPException(status_code=400, detail="Cookie file not found")
+        ydl_opts["cookiefile"] = cookies_file
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -61,6 +71,12 @@ async def download_media(data: DownloadRequest):
             "download_url": f"/file/{os.path.basename(file_path)}"
         }
 
+    except yt_dlp.utils.DownloadError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Download failed: {str(e)}. "
+                   f"If video requires login, set `use_cookies` to true and provide cookies.txt"
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
